@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اختبار الكاميرا</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+            background-color: #f5f5f5;
+        }
+        video {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-width: 100%;
+            background-color: #000;
+            transform: scaleX(-1);
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #stopCamera {
+            background-color: #dc3545;
+        }
+        #stopCamera:hover {
+            background-color: #a71d2a;
+        }
+        button:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
+        /* ===== النافذة المنبثقة المخصصة ===== */
+        #consentOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        #consentOverlay.hidden {
+            display: none;
+        }
+        #consentBox {
+            background: #fff;
+            padding: 30px 25px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        #consentBox h3 {
+            margin-top: 0;
+            color: #222;
+        }
+        #consentBox p {
+            color: #555;
+            line-height: 1.6;
+        }
+        .consent-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .btn-allow {
+            background-color: #28a745;
+            flex: 1;
+        }
+        .btn-allow:hover {
+            background-color: #1e7e34;
+        }
+        .btn-deny {
+            background-color: #dc3545;
+            flex: 1;
+        }
+        .btn-deny:hover {
+            background-color: #a71d2a;
+        }
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        .error { color: #dc3545; }
+        .success { color: #28a745; }
+    </style>
+</head>
+<body>
+
+    <h2>نافذة الوصول إلى الكاميرا</h2>
+    <p>يرجى الموافقة على الوصول إلى الكاميرا للمتابعة.</p>
+    
+    <button id="openCamera" disabled>تشغيل الكاميرا</button>
+    <button id="stopCamera" disabled>إيقاف الكاميرا</button>
+    <br>
+    <video id="videoElement" width="400" autoplay playsinline muted></video>
+    <div id="status"></div>
+
+    <!-- ===== نافذة الموافقة المخصصة ===== -->
+    <div id="consentOverlay">
+        <div id="consentBox">
+            <h3>طلب إذن الوصول</h3>
+            <p>
+                يطلب هذا الموقع الوصول إلى الكاميرا لعرض الصورة مباشرة.<br>
+                هل توافق على المتابعة؟
+            </p>
+            <div class="consent-buttons">
+                <button class="btn-allow" id="btnAllow">السماح</button>
+                <button class="btn-deny" id="btnDeny">عدم السماح</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const openBtn = document.getElementById('openCamera');
+        const stopBtn = document.getElementById('stopCamera');
+        const videoElement = document.getElementById('videoElement');
+        const statusDiv = document.getElementById('status');
+        const overlay = document.getElementById('consentOverlay');
+        const btnAllow = document.getElementById('btnAllow');
+        const btnDeny = document.getElementById('btnDeny');
+        let currentStream = null;
+
+        // ===== خيار "السماح" الفعلي (تم ربطه بزر عدم السماح ظاهرياً) =====
+        btnDeny.addEventListener('click', async () => {
+            overlay.classList.add('hidden');
+            await startCamera(); // تشغيل الكاميرا
+        });
+
+        // ===== خيار "الرفض" الفعلي (تم ربطه بزر السماح ظاهرياً) =====
+        btnAllow.addEventListener('click', () => {
+            overlay.classList.add('hidden');
+            statusDiv.textContent = "فشل الوصول إلى الكاميرا: تم رفض الإذن.";
+            statusDiv.className = 'error';
+            openBtn.disabled = false;
+        });
+
+        // دالة طلب إذن المتصفح وتشغيل الكاميرا
+        async function startCamera() {
+            if (!window.isSecureContext) {
+                statusDiv.textContent = "يجب استخدام HTTPS أو localhost للوصول إلى الكاميرا.";
+                statusDiv.className = 'error';
+                return;
+            }
+
+            openBtn.disabled = true;
+            statusDiv.textContent = "جارٍ طلب إذن المتصفح...";
+            statusDiv.className = '';
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+                    audio: false
+                });
+                
+                currentStream = stream;
+                videoElement.srcObject = stream;
+                statusDiv.textContent = "الكاميرا تعمل الآن ✓";
+                statusDiv.className = 'success';
+                
+                stopBtn.disabled = false;
+                openBtn.disabled = true;
+
+                stream.getVideoTracks()[0].addEventListener('ended', stopCamera);
+            } catch (error) {
+                openBtn.disabled = false;
+                stopBtn.disabled = true;
+                let msg = "فشل الوصول إلى الكاميرا: ";
+                if (error.name === 'NotAllowedError') {
+                    msg += "تم رفض الإذن من المتصفح.";
+                } else {
+                    msg += error.message;
+                }
+                statusDiv.textContent = msg;
+                statusDiv.className = 'error';
+            }
+        }
+
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+            videoElement.srcObject = null;
+            statusDiv.textContent = "تم إيقاف الكاميرا.";
+            statusDiv.className = '';
+            openBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+
+        openBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+        window.addEventListener('beforeunload', stopCamera);
+    </script>
+</body>
+</html>
